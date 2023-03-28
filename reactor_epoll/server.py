@@ -1,5 +1,6 @@
+# coding: utf8
 """
-使用多路复用器select实现的简单的多进程高性能reactor
+使用多路复用器epoll实现的简单的多进程高性能reactor
 """
 import socket
 import select
@@ -8,34 +9,35 @@ from multiprocessing import Process, Queue, cpu_count
 
 
 def single_process(socket_queue, process_id):
-    r_fd = set()
-    w_fd = set()
-    e_fd = set()
+    epoll = select.epoll()
+    my_sockets = {}
     while True:
         if socket_queue.qsize() > 0:
             c = socket_queue.get()
-            r_fd.add(c)
-            w_fd.add(c)
-            e_fd.add(c)
-        if r_fd or w_fd or e_fd:
-            r_socket, w_socket, e_socket = select.select(r_fd, w_fd, e_fd)
-            # 只关注可读事件
-            del_list = []
-            for s in r_socket:
-                try:
-                    msg = s.recv(1024)
-                    print(process_id, s.fileno(), msg)
-                    if msg:
-                        s.send(msg)
-                    else:
-                        del_list.append(s)
-                        s.close()
-                except:
-                    pass
-            for s in del_list:
-                r_fd.remove(s)
-                w_fd.remove(s)
-                e_fd.remove(s)
+            my_sockets[c.fileno()] = {
+                's': c,
+                'send_msg': []
+            }
+            epoll.register(c, select.EPOLLIN)
+        events = epoll.poll()
+        del_list = []
+        for fileno, event in events:
+            s = my_sockets[fileno]['s']
+            if event & select.EPOLLIN:
+                msg = s.recv(1024)
+                if not msg:
+                    del_list.append(fileno)
+                    epoll.unregister(fileno)
+                print(process_id, msg)
+                my_sockets[fileno]['send_msg'].append(msg)
+                epoll.modify(fileno, select.EPOLLOUT)
+            elif event & select.EPOLLOUT:
+                s.send(my_sockets[fileno]['send_msg'].pop())
+                epoll.modify(fileno, select.EPOLLIN)
+            else:
+                pass
+        for fd in del_list:
+            del my_sockets[fd]
         time.sleep(1 / 1000)
 
 
