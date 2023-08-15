@@ -18,26 +18,30 @@ def single_process(socket_queue, process_id):
                 's': c,
                 'send_msg': []
             }
-            epoll.register(c, select.EPOLLIN)
-        events = epoll.poll()
-        del_list = []
-        for fileno, event in events:
-            s = my_sockets[fileno]['s']
-            if event & select.EPOLLIN:
-                msg = s.recv(1024)
-                if not msg:
-                    del_list.append(fileno)
-                    epoll.unregister(fileno)
-                print(process_id, msg)
-                my_sockets[fileno]['send_msg'].append(msg)
-                epoll.modify(fileno, select.EPOLLOUT)
-            elif event & select.EPOLLOUT:
-                s.send(my_sockets[fileno]['send_msg'].pop())
-                epoll.modify(fileno, select.EPOLLIN)
-            else:
-                pass
-        for fd in del_list:
-            del my_sockets[fd]
+            epoll.register(c.fileno(), select.EPOLLIN)
+        try:
+            events = epoll.poll(1)
+            del_list = []
+            for fileno, event in events:
+                print()
+                s = my_sockets[fileno]['s']
+                if event & select.EPOLLIN:
+                    msg = s.recv(1024)
+                    if not msg:
+                        del_list.append(fileno)
+                        epoll.unregister(fileno)
+                    print(process_id, msg)
+                    my_sockets[fileno]['send_msg'].append(msg)
+                    epoll.modify(fileno, select.EPOLLOUT)
+                elif event & select.EPOLLOUT:
+                    s.send(my_sockets[fileno]['send_msg'].pop())
+                    epoll.modify(fileno, select.EPOLLIN)
+                else:
+                    pass
+            for fd in del_list:
+                del my_sockets[fd]
+        except:
+            pass
         time.sleep(1 / 1000)
 
 
